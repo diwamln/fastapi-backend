@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // --- KONFIGURASI DOCKER ---
-        DOCKER_IMAGE = 'diwamln/fastapi-backend' // Nama Image Backend
+        DOCKER_IMAGE = 'diwamln/fastapi-backend' 
         DOCKER_CREDS = 'docker-hub' 
         
         // --- KONFIGURASI GIT (REPO MANIFEST) ---
@@ -32,17 +32,19 @@ pipeline {
         stage('Build & Push (TEST Image)') {
             steps {
                 script {
-                    // Asumsi: Source code backend ada di folder 'backend'
-                    dir('backend') { 
-                        docker.withRegistry('', DOCKER_CREDS) {
-                            def testTag = "${env.BASE_TAG}-test"
-                            echo "Building Backend Image: ${testTag}"
-                            
-                            // Backend tidak butuh --build-arg untuk URL
-                            // Config diambil dari K8s ConfigMap nanti
-                            def testImage = docker.build("${DOCKER_IMAGE}:${testTag}", ".")
-                            testImage.push()
-                        }
+                    // FIX: Hapus dir('backend') agar docker build jalan di root
+                    docker.withRegistry('', DOCKER_CREDS) {
+                        def testTag = "${env.BASE_TAG}-test"
+                        echo "Building Backend Image: ${testTag}"
+                        
+                        // DEBUGGING: Cek file apa saja yang ada di sini
+                        echo "--- CEK FILE DI WORKSPACE ---"
+                        sh 'ls -la'
+                        echo "-----------------------------"
+
+                        // Build image dari direktori saat ini (.)
+                        def testImage = docker.build("${DOCKER_IMAGE}:${testTag}", ".")
+                        testImage.push()
                     }
                 }
             }
@@ -61,7 +63,7 @@ pipeline {
                             sh 'git config user.name "Jenkins Pipeline"'
                             
                             // 2. Update file YAML Backend Testing
-                            // Pastikan strukturnya sesuai (misal: backend/k8s/test.yaml)
+                            // Pastikan file ini ada di REPO MANIFESTS: backend/k8s/test.yaml
                             sh "sed -i 's|image: ${DOCKER_IMAGE}:.*|image: ${DOCKER_IMAGE}:${env.BASE_TAG}-test|g' backend/k8s/test.yaml"
                             
                             // 3. Push
@@ -89,24 +91,20 @@ pipeline {
         stage('Build & Push (PROD Image)') {
             steps {
                 script {
-                    dir('backend') {
-                        docker.withRegistry('', DOCKER_CREDS) {
-                            // Strategi: Retagging
-                            // Kita tidak perlu build ulang dari nol karena code backend sama saja
-                            // Kita ambil image test, lalu kita kasih label 'prod'
-                            
-                            def testImage = docker.image("${DOCKER_IMAGE}:${env.BASE_TAG}-test")
-                            def prodTag = "${env.BASE_TAG}-prod"
-                            
-                            // Pull dulu untuk memastikan image ada (jika ganti node agent)
-                            testImage.pull() 
-                            
-                            // Beri tag baru (-prod) dan tag latest
-                            testImage.push(prodTag)
-                            testImage.push('latest')
-                            
-                            echo "Image berhasil dipromosikan ke PROD: ${prodTag}"
-                        }
+                    // FIX: Hapus dir('backend') di sini juga
+                    docker.withRegistry('', DOCKER_CREDS) {
+                        // Strategi: Retagging (Promote Image)
+                        def testImage = docker.image("${DOCKER_IMAGE}:${env.BASE_TAG}-test")
+                        def prodTag = "${env.BASE_TAG}-prod"
+                        
+                        // Pull dulu untuk memastikan image ada
+                        testImage.pull() 
+                        
+                        // Beri tag baru (-prod) dan tag latest
+                        testImage.push(prodTag)
+                        testImage.push('latest')
+                        
+                        echo "Image berhasil dipromosikan ke PROD: ${prodTag}"
                     }
                 }
             }
