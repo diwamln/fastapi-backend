@@ -1,6 +1,11 @@
 pipeline {
     agent { label 'built-in' }
 
+    tools {
+        docker 'docker-custom' 
+        // Nama 'docker-custom' harus sama persis dengan Langkah 1
+    }
+
     environment {
         // --- KONFIGURASI DOCKER ---
         DOCKER_IMAGE = 'diwamln/fastapi-backend' 
